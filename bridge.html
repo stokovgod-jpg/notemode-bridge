@@ -3,64 +3,50 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MOD bridge</title>
+  <title>NOTEMODE bridge</title>
 </head>
 <body>
 <script>
-(() => {
+(function () {
   "use strict";
 
-  const READY = "MOD_BRIDGE_READY:frag1";
-  const RESPONSE_PREFIX = "MOD_RES:";
-
-  function decodeBase64Utf8(value) {
+  function decodeUtf8Base64(value) {
     const binary = atob(value);
-    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    let escaped = "";
+    for (let i = 0; i < binary.length; i++) {
+      escaped += "%" + binary.charCodeAt(i).toString(16).padStart(2, "0");
+    }
+    return decodeURIComponent(escaped);
   }
 
-  function reply(message, ok, data, error) {
-    const result = { id: String(message.q || ""), ok: !!ok };
-    if (error) result.error = String(error);
-    else result.data = data;
-    document.title = RESPONSE_PREFIX + JSON.stringify(result);
+  function reply(id, ok, data, error) {
+    document.title = "MOD_RES:" + JSON.stringify({ id: id, ok: ok, data: data, error: error });
   }
 
-  function handleFragment() {
+  function handleRequest() {
     if (!location.hash || location.hash.length < 2) return;
-
-    let message;
+    let request;
     try {
-      message = JSON.parse(decodeURIComponent(location.hash.slice(1)));
-      if (!message || typeof message.q !== "string" || typeof message.f !== "string" || !Array.isArray(message.a)) {
-        throw new Error("invalid_request");
-      }
-
-      const [key64, value64] = message.a;
-      const key = decodeBase64Utf8(String(key64 || ""));
-      if (!key || key.length > 256) throw new Error("invalid_key");
-
-      if (message.f === "save") {
-        const value = decodeBase64Utf8(String(value64 || ""));
-        if (value.length > 200000) throw new Error("value_too_large");
-        localStorage.setItem(key, value);
-        reply(message, true, true);
-      } else if (message.f === "load") {
-        reply(message, true, localStorage.getItem(key));
-      } else if (message.f === "remove") {
-        localStorage.removeItem(key);
-        reply(message, true, true);
+      request = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+      if (!request || !request.q || !request.f || !Array.isArray(request.a)) throw new Error("Invalid request");
+      const key = decodeUtf8Base64(request.a[0]);
+      if (request.f === "load") {
+        reply(request.q, true, localStorage.getItem(key) || "", "");
+      } else if (request.f === "save") {
+        if (request.a.length < 2) throw new Error("Missing value");
+        localStorage.setItem(key, decodeUtf8Base64(request.a[1]));
+        reply(request.q, true, "saved", "");
       } else {
-        throw new Error("unknown_command");
+        throw new Error("Unknown command");
       }
     } catch (error) {
-      reply(message || { q: "" }, false, null, error && error.message ? error.message : error);
+      reply(request && request.q ? request.q : "", false, "", String(error && error.message || error));
     }
   }
 
-  document.title = READY;
-  addEventListener("hashchange", handleFragment);
-  handleFragment();
+  window.addEventListener("hashchange", handleRequest);
+  document.title = "MOD_BRIDGE_READY:frag1";
+  handleRequest();
 })();
 </script>
 </body>
