@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MOD bridge</title>
+</head>
+<body>
+<script>
+(() => {
+  "use strict";
+
+  const READY = "MOD_BRIDGE_READY:frag1";
+  const RESPONSE_PREFIX = "MOD_RES:";
+
+  function decodeBase64Utf8(value) {
+    const binary = atob(value);
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  }
+
+  function reply(message, ok, data, error) {
+    const result = { id: String(message.q || ""), ok: !!ok };
+    if (error) result.error = String(error);
+    else result.data = data;
+    document.title = RESPONSE_PREFIX + JSON.stringify(result);
+  }
+
+  function handleFragment() {
+    if (!location.hash || location.hash.length < 2) return;
+
+    let message;
+    try {
+      message = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+      if (!message || typeof message.q !== "string" || typeof message.f !== "string" || !Array.isArray(message.a)) {
+        throw new Error("invalid_request");
+      }
+
+      const [key64, value64] = message.a;
+      const key = decodeBase64Utf8(String(key64 || ""));
+      if (!key || key.length > 256) throw new Error("invalid_key");
+
+      if (message.f === "save") {
+        const value = decodeBase64Utf8(String(value64 || ""));
+        if (value.length > 200000) throw new Error("value_too_large");
+        localStorage.setItem(key, value);
+        reply(message, true, true);
+      } else if (message.f === "load") {
+        reply(message, true, localStorage.getItem(key));
+      } else if (message.f === "remove") {
+        localStorage.removeItem(key);
+        reply(message, true, true);
+      } else {
+        throw new Error("unknown_command");
+      }
+    } catch (error) {
+      reply(message || { q: "" }, false, null, error && error.message ? error.message : error);
+    }
+  }
+
+  document.title = READY;
+  addEventListener("hashchange", handleFragment);
+  handleFragment();
+})();
+</script>
+</body>
+</html>
