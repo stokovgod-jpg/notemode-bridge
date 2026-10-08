@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TRACKER hours bridge</title>
+</head>
+<body>
+<script>
+(function () {
+  "use strict";
+
+  var DDLK_API_URL = "https://ddlk.bio/api/profile/";
+  var FETCH_TIMEOUT_MS = 9000;
+
+  function reply(id, ok, data, error) {
+    document.title = "MOD_RES:" + JSON.stringify({ id: id, ok: ok, data: data, error: error });
+  }
+
+  function fetchHours(steam64, onDone) {
+    var done = false;
+    var controller = null;
+    var timer = null;
+    function finish(hours, error) {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      onDone(hours, error);
+    }
+    try {
+      if (typeof AbortController !== "undefined") {
+        controller = new AbortController();
+        timer = setTimeout(function () {
+          try { controller.abort(); } catch (_) {}
+          finish(undefined, "ddlk.bio fetch timed out");
+        }, FETCH_TIMEOUT_MS);
+      }
+      var options = {};
+      if (controller) options.signal = controller.signal;
+      fetch(DDLK_API_URL + encodeURIComponent(steam64) + "/steam", options)
+        .then(function (response) {
+          if (!response.ok) throw new Error("ddlk.bio HTTP " + response.status);
+          return response.json();
+        })
+        .then(function (obj) {
+          var hours = obj && (obj.hours_played !== undefined ? obj.hours_played : obj.hours);
+          if (hours === undefined || hours === null || !isFinite(Number(hours))) {
+            throw new Error("hours_played missing in ddlk.bio response");
+          }
+          finish(Number(hours), "");
+        })
+        .catch(function (error) {
+          finish(undefined, String((error && error.message) || error));
+        });
+    } catch (error) {
+      finish(undefined, String((error && error.message) || error));
+    }
+  }
+
+  function handleRequest() {
+    if (!location.hash || location.hash.length < 2) return;
+    var request;
+    try {
+      request = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+      if (!request || !request.q || !request.f || !Array.isArray(request.a)) throw new Error("Invalid request");
+      if (request.f === "hours") {
+        var steam64 = String(request.a[0] || "");
+        if (!/^\d{10,20}$/.test(steam64)) throw new Error("Invalid steam64");
+        var q = request.q;
+        fetchHours(steam64, function (hours, error) {
+          if (error) reply(q, false, "", error);
+          else reply(q, true, { hours: hours }, "");
+        });
+      } else {
+        throw new Error("Unknown command");
+      }
+    } catch (error) {
+      reply(request && request.q ? request.q : "", false, "", String((error && error.message) || error));
+    }
+  }
+
+  window.addEventListener("hashchange", handleRequest);
+  document.title = "HOURS_BRIDGE_READY:frag1";
+  handleRequest();
+})();
+</script>
+</body>
+</html>
