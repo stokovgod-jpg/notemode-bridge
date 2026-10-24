@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deadlock ntfy bridge</title>
+</head>
+<body>
+<script>
+(function () {
+  "use strict";
+
+  const DEFAULT_TOPIC = "705d4394096e41918f2dd3d95d53da15";
+
+  function reply(id, ok, error) {
+    document.title = "NTFY_RES:" + JSON.stringify({ id: id, ok: ok, error: error || "" });
+  }
+
+  async function handleRequest() {
+    if (!location.hash || location.hash.length < 2) return;
+    let request;
+    try {
+      request = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+      if (!request || !request.id || request.command !== "publish" || typeof request.message !== "string") {
+        throw new Error("Invalid request");
+      }
+
+      const topic = request.topic || DEFAULT_TOPIC;
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(topic)) throw new Error("Invalid topic");
+
+      const response = await fetch("https://ntfy.sh/" + topic, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Title": "Deadlock",
+          "Priority": "4",
+          "Tags": "video_game"
+        },
+        body: request.message
+      });
+      if (!response.ok) throw new Error("ntfy HTTP " + response.status);
+      reply(request.id, true, "");
+    } catch (error) {
+      reply(request && request.id || "", false, String(error && error.message || error));
+    }
+  }
+
+  window.addEventListener("hashchange", handleRequest);
+  document.title = "NTFY_BRIDGE_READY:v1";
+  handleRequest();
+})();
+</script>
+</body>
+</html>
